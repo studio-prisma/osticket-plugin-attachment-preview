@@ -1,71 +1,109 @@
-# Attachment Preview
-An [osTicket](https://github.com/osTicket/osTicket) plugin allowing inlining of Attachments, works with PHP8.3+ and osTicket 1.18+ 
+# Attachment Preview for osTicket
 
-#How it looks:
-![agent_view](https://cloud.githubusercontent.com/assets/5077391/15166401/bedd01fc-1761-11e6-8814-178c7d4efc03.png)
+[![Validate](https://github.com/studio-prisma/osticket-plugin-attachment-preview/actions/workflows/validate.yml/badge.svg)](https://github.com/studio-prisma/osticket-plugin-attachment-preview/actions/workflows/validate.yml)
+[![License: GPL-2.0](https://img.shields.io/badge/License-GPL--2.0-blue.svg)](LICENSE)
 
-## Current features:
-- PDF Files attachments are embedded as full PDF `<object>` in the entry. The number to automatically show is configurable, and if you tick the box `Hide Seen` in the config, then if you go back, your browser remembers you've already seen that attachment and doesn't show it again, instead replacing the embedded PDF with a Toggle button. You can get toggle buttons for everything by setting the `Number of attachments to show initially` option to 0. 
-- Images inserted as normal `<img>` tags. Supported by most browsers: `png,jpg,gif,svg,bmp`
-- Text files attachments are inserted into using `<pre>` (If enabled). 
-- HTML files are filtered and inserted (If enabled). 
-- Youtube links in comments can be used to create embedded `<iframe>` players. (if enabled)
-- HTML5 Compatible video formats attached are embedded as `<video>` players. (if enabled)
-- All modifications to the DOM are now performed on the server, however the bulk of the work is in Javascript.
-- Admin can choose the types of attachments to inline, and who can inline them.
-- ~~ Plugin API: allows other plugins to manipulate the DOM without adding race conditions or multiple re-parses. ~~
+Shows ticket attachments inline in the agent view of osTicket: PDFs, images, text and mail files, audio, video, and optionally sanitized HTML and YouTube/Vimeo players.
 
-## To Install:
-1. Simply download the `attachments.phar` file into the /include/plugins/ folder
-1. Navigate to: https://your.domain/support/scp/plugins.php?a=add to add a new plugin.
-1. Click "Install" next to "Attachment Inline Plugin"
-1. Add an instance (the plugin only works with ONE instance, but you have to manually create one)
-1. Now the plugin instance needs to be enabled & configured, so you should be seeing the list of currently installed plugins, pick the checkbox next to "Attachment Inline Plugin" and select the "Enable" button.
-1. Now you can configure the plugin, click the link "Attachment Inline Plugin" and choose who the plugin should be activated for, or keep the default.
+This is a maintained fork of [clonemeagain/attachment_preview](https://github.com/clonemeagain/attachment_preview). It fixes the open upstream issues, replaces the hand-written HTML filter with DOMPurify and ships as a plain plugin folder instead of a `.phar`. The fixes are offered upstream as separate pull requests.
 
-If you don't already have a PDF program on your computer, Chrome will still work (it does that for you), for Firefox you will need to enable it, eg: [enable pdf preview in firefoox](https://support.mozilla.org/en-US/kb/change-firefox-behavior-when-open-file) and set "Preview in Firefox"
+**[Deutsche Fassung →](README.de.md)**
 
-## To Remove:
-Navigate to admin plugins view, click the checkbox and push the "Delete" button.
+---
 
-The plugin will still be available, you have deleted the config only at this point, to remove after deleting, remove the /plugins/attachment_preview folder.
+## Requirements
 
+- osTicket **1.18.x** (tested against the 1.18 code base, latest 1.18.4)
+- PHP **8.0 – 8.4** (syntax-checked on every version in CI, tests run on 8.3)
+- Agents use a current browser. PDFs are shown by the browser's own PDF viewer.
+- Attachments on S3 or another external storage need a CORS rule that allows `GET` from your helpdesk origin.
 
-# How it works:
-Latest in [Wiki](https://github.com/clonemeagain/attachment_preview/wiki)
+---
 
-* Essentially it's simple, when enabled, and a ticket page is viewed, an output buffer is created which waits for the page to be finished rendering by osTicket. (Using php's register_shutdown_function & ob_start)
-* The plugin then uses a DOMDocument and adds a new DOMElement after each attachment, inlining them. PDF's become `<object>`'s, PNG's become `<img>` etc. It also injects the plugin's stylesheet and script into the correct places of the page, so they execute once and don't break anything else.
-* It currently has to hack the Content Security Policy to allow blob url's to work, and if you use Attachments on S3, you'll need to ensure you add a suitable CORS policy in the bucket permissions, eg:
-```json
-[
-    {
-        "AllowedHeaders": [
-            "*"
-        ],
-        "AllowedMethods": [
-            "GET",
-            "HEAD"
-        ],
-        "AllowedOrigins": [
-            "https://your.domain"
-        ],
-        "ExposeHeaders": []
-    }
-]
+## Install
+
+Full guide: **[docs/INSTALL.md](docs/INSTALL.md)** ([deutsch](docs/INSTALL.de.md)).
+
+Short version:
+
+1. **Remove the upstream plugin first** if it is installed (`attachments.phar`). Both declare the class `AttachmentPreviewPlugin`; with both installed osTicket stops with a fatal error.
+2. Download `attachment-preview-<version>.zip` from the [latest release](https://github.com/studio-prisma/osticket-plugin-attachment-preview/releases/latest).
+3. Unzip into `include/plugins/`, which creates `include/plugins/attachment-preview/`.
+4. Admin panel → Manage → Plugins → Add New Plugin → install **Attachment Preview**, add one instance, enable it.
+
+---
+
+## Configuration
+
+| Setting | Default | Purpose |
+|---|---|---|
+| Permission | on | Master switch for the inline previews |
+| Hide Seen | off | Remembers seen attachments in the agent's browser and shows a button instead of the preview next time |
+| Number of days to remember attachments for | 14 | Seen entries older than this are deleted from browser storage |
+| Max Size | 1024 KB | Larger attachments stay links. 0 = no limit |
+| Inline PDF files | on | `<object>` with the browser PDF viewer |
+| Inline image files | on | bmp, svg, gif, png, jpg, jpeg as `<img>` |
+| Inline textfiles (txt, csv, eml) | on | Shown as plain text in `<pre>`, never as HTML |
+| Inline HTML files | **off** | HTML attachments, sanitized with DOMPurify (see below) |
+| Inline audio / video | off | HTML5 players for attached media files |
+| Inline YouTube links | **off** | Player from `youtube-nocookie.com` |
+| Inline Vimeo links | **off** | Player from `player.vimeo.com` with `dnt=1` |
+| Number of attachments to show initially | All | Attachments beyond this number get a "Show Attachment" button |
+| Open attachment links in new tab | off | Adds `target="_blank"` to attachment links |
+
+Run exactly **one** instance. A second enabled instance is ignored (the first one renders the page).
+
+### HTML attachments
+
+With "Inline HTML files" on, the attachment is fetched as text and passed through [DOMPurify](https://github.com/cure53/DOMPurify) 3.4.17 before it is inserted. What remains:
+
+- Formatting tags (paragraphs, lists, tables, bold/italic, headings, links, images)
+- Links only to `http:`, `https:` and `mailto:`, opened in a new tab with `rel="noopener noreferrer nofollow"`
+- Images only when embedded as `data:image/png|gif|jpeg|webp;base64`. Remote images are removed, so a tracking pixel does not report when an agent opened the mail.
+
+Removed: scripts, event handlers, `style`, `class`, `id`, forms, frames, `object`/`embed`, SVG and MathML.
+
+If `vendor/purify.min.js` is missing, HTML attachments are not rendered at all; the preview shows a notice instead.
+
+### Third-party players
+
+YouTube and Vimeo players load content from Google or Vimeo whenever an agent opens a ticket that contains such a link. Both options are off by default. Turn them on only if that matches your privacy requirements.
+
+---
+
+## Testing
+
+```bash
+npm ci
+./tests/run-all.sh
 ```
 
-The plugin has several administratively configurable options, including, but not limited to:
-* What to inline (PDF/Image/Youtube/Text/HTML etc)
-* The maximum size of attachments to inline.
-* How many to inline, attachments after that are still inlineable, but the Agent has to press a "Show Attachment" button (translateable). 
-* We now support changing the original attachment link into a "New Tab", so there is an option for that.
-* If the browser should remember the attachments it's seen, and if so, for how long.
+| Suite | What it checks |
+|---|---|
+| `tests/unit.php` | Manifest, defaults, URL detection, YouTube/Vimeo parsing, attachment types, script injection, escaping |
+| `tests/failmode.php` | Plugin without `vendor/`: no sanitizer, HTML preview off, everything else works |
+| `tests/integration.php` | `php -S`: real headers and output buffering. ZIP export byte-identical, two instances render once, CSP rewrite |
+| `tests/js/run.js` | jsdom + jQuery 3.7.0 on a page rendered by the plugin: 35 XSS payloads, ordinary HTML mail, fail-closed, "Hide Seen" cache |
 
-The plugin is completely self-contained, so there are ZERO MODS to core required to get it working. 
-You simply clone the repo or download the zip from github and extract into /include/plugins/ which should make a folder: "attachment_preview", but it could be called anything.
+Not verified: a full osTicket installation end to end, Firefox and Safari, S3 storage, PJAX navigation between tickets.
 
+---
 
+## Known limitations
 
-# TODO:
-- Your suggestions/feedback? [Let me know via the Issue Queue above!](https://github.com/clonemeagain/attachment_preview/issues/new)
+- **Print view:** attachments are not inlined in the print output (upstream #36). That needs a change to osTicket core.
+- **PDFs** depend on the browser viewer. Internet Explorer is not supported.
+- **CSP:** the plugin adds `blob:` to `object-src` on ticket pages so the PDF can be shown from a Blob URL.
+- **Agent pages only.** The client portal is not changed.
+- **Migration from upstream:** settings are not taken over. Note them before removing the old plugin.
+- The plugin buffers and re-parses the whole ticket page. On very large threads this costs some milliseconds per request.
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: see [SECURITY.md](SECURITY.md), never a public issue.
+
+## License
+
+[GPL-2.0](LICENSE), like the upstream plugin by clonemeagain. DOMPurify (bundled in the release package under `vendor/`) is © Cure53, Apache-2.0 or MPL-2.0.
