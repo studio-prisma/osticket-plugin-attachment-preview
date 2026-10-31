@@ -247,9 +247,14 @@ class AttachmentPreviewPlugin extends Plugin
           'hide_seen'        => $config->get('hide-seen') ? 1 : 0,
           'hide_age'         => $config->get('hide-age') ?: 14,
           'open_attachments' => $config->get('newtab-links') ? 'new-tab' : 'normal',
+          'text_html_unavailable' => __('HTML preview unavailable: the sanitizer (vendor/purify.min.js) is missing.'),
         ];
 
-        $plugin_js_variable = 'AttachmentPreview = '.json_encode($plugin_options).';'; //NOTE: JSON_PRETTY_PRINT only available from 5.4+
+        // JSON_HEX_* keeps a translated string containing "</script>" from ending the inline script early.
+        $plugin_js_variable = 'AttachmentPreview = '.json_encode(
+            $plugin_options,
+            JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+          ).';';
         // If we were able to simply link to the script, we could insert the settings and have the browser cache the script.. but noo
         // Fetch the file and replace the comment with the config to override the defaults:
         $script = str_replace(
@@ -257,6 +262,9 @@ class AttachmentPreviewPlugin extends Plugin
           $plugin_js_variable,
           file_get_contents(__DIR__.'/script.js')
         );
+        // Own <script> element, so script.js keeps its "use strict" directive.
+        $sanitizer = $config->get('attach-html') ? self::sanitizerScript() : '';
+        $sanitizer = $sanitizer ? "<script>$sanitizer</script>\n" : '';
 
         // find the </head> tag, and insert our stylesheet just before it.
         $head = '</head>';
@@ -264,8 +272,37 @@ class AttachmentPreviewPlugin extends Plugin
         $page = str_replace($head, $replacement, $page);
         // find the </body> tag, insert our javascript just before it.
         $foot = '</body>';
-        $replacement = "<script>$script</script>\n</body>";
+        $replacement = $sanitizer."<script>$script</script>\n</body>";
         return str_replace($foot, $replacement, $page); // only do it once.. 
+    }
+
+    /**
+     * DOMPurify for the HTML preview, as a private copy in window.APDOMPurify.
+     *
+     * The UMD bundle assigns window.DOMPurify; any DOMPurify the page already had is
+     * put back afterwards. AMD/CommonJS detection is switched off by shadowing
+     * define/module/exports. Without the file the HTML preview stays empty (script.js
+     * checks for APDOMPurify), it never falls back to unsanitized output.
+     */
+    public static function sanitizerScript(): string
+    {
+        $file = __DIR__.'/vendor/purify.min.js';
+        if (!is_readable($file)) {
+            error_log('Attachment Preview: vendor/purify.min.js missing, HTML preview disabled.');
+            return '';
+        }
+        // Inside an inline <script>, "</script" ends the element and "<!--" can switch the
+        // HTML parser into an escaped mode. Both only occur in string and regex literals
+        // of the bundle, where "<\/" and "<\!" mean the same characters to JS.
+        $purify = str_ireplace(
+          ['</script', '<!--'],
+          ['<\/script', '<\!--'],
+          file_get_contents($file)
+        );
+
+        return "(function(){var define,module,exports,had=('DOMPurify' in window),prev=window.DOMPurify;\n"
+          .$purify
+          ."\n;window.APDOMPurify=window.DOMPurify;if(had){window.DOMPurify=prev;}else{try{delete window.DOMPurify;}catch(e){window.DOMPurify=undefined;}}})();\n";
     }
 
     /**
