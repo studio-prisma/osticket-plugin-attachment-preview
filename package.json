@@ -1,0 +1,17 @@
+{
+  "name": "osticket-plugin-attachment-preview",
+  "version": "0.0.0-see-plugin-php",
+  "private": true,
+  "description": "Build and test tooling. The plugin version lives in plugin.php only.",
+  "license": "GPL-2.0-only",
+  "scripts": {
+    "test": "node tests/js/run.js"
+  },
+  "dependencies": {
+    "dompurify": "3.4.17"
+  },
+  "devDependencies": {
+    "jquery": "3.7.0",
+    "jsdom": "30.1.3"
+  }
+}

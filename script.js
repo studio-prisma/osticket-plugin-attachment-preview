@@ -1,5 +1,5 @@
 "use strict";
-// Attachment Preview Script, with HTML Sanitizer.
+// Attachment Preview Script. HTML attachments are sanitized with DOMPurify.
 // Setup default config options
 var AttachmentPreview = {
     open_attachments: 'normal',
@@ -242,11 +242,15 @@ AttachmentPreview.handleFetchEvent = function(e) {
                 }, 'text');
                 break;
             case 'html':
-                // Replace the html with the attachment, after passing
-                // through the sanitizer:
+                // Fail closed: without DOMPurify the attachment is not rendered at all.
+                if (!AttachmentPreview.sanitizer_ready()) {
+                    elem.text(AttachmentPreview.text_html_unavailable);
+                    break;
+                }
                 $.get(url, function(data) {
-                    elem.html($("<div>" + $.trim(sanitizer.sanitize(data)) +
-                        "</div>"));
+                    var $div = $('<div class="ap_html"></div>');
+                    $div.append(AttachmentPreview.sanitize(data));
+                    elem.empty().append($div);
                 }, 'text');
         }
         // prevent repeated fetch events from re-fetching
@@ -254,48 +258,56 @@ AttachmentPreview.handleFetchEvent = function(e) {
     }
 };
 
-// The HTML inject methods will probably fail at some point, but for now.. I'll just leave this here.
-// src: https://gist.github.com/ufologist/5a0da51b2b9ef1b861c30254172ac3c9
-var sanitizer = {};
-(function($) {
-    var safe = '<a><b><blockquote><dd><div><dl><dt><em><h1><h2><h3><h4><i><img><li><ol><p><pre><s><sup><sub><strong><strike><ul><br><hr><table><th><tr><td><tbody><tfoot>';
-
-    function trimAttributes(node) {
-        // node.attributes is live: removing while walking forwards skips every
-        // second attribute and then runs past the end (TypeError in strict mode).
-        // Walk backwards so every attribute goes.
-        for (var i = node.attributes.length - 1; i >= 0; i--) {
-            node.removeAttribute(node.attributes[i].name);
-        }
+// HTML attachments go through DOMPurify. The plugin injects its own copy as
+// window.APDOMPurify (vendor/purify.min.js), and only when "Inline HTML files" is on,
+// so neither the hook below nor the version clash with anything else on the page.
+// Text formatting survives; scripts, styles, forms, frames and remote resources do not.
+AttachmentPreview.text_html_unavailable = AttachmentPreview.text_html_unavailable ||
+    'HTML preview unavailable: the sanitizer (vendor/purify.min.js) is missing.';
+AttachmentPreview.purify_config = {
+    ALLOWED_TAGS: ['a', 'abbr', 'b', 'blockquote', 'br', 'caption', 'code', 'dd', 'del', 'div', 'dl', 'dt',
+        'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'ins', 'li', 'ol', 'p', 'pre', 's',
+        'small', 'span', 'strike', 'strong', 'sub', 'sup', 'table', 'tbody', 'td', 'tfoot', 'th',
+        'thead', 'tr', 'u', 'ul'],
+    ALLOWED_ATTR: ['href', 'title', 'alt', 'src', 'colspan', 'rowspan'],
+    ALLOW_DATA_ATTR: false,
+    ALLOW_ARIA_ATTR: false,
+    // Links and image sources only as web or mail addresses (no javascript:, cid:).
+    // DOMPurify still lets data: through on <img>; the hook below narrows that further.
+    ALLOWED_URI_REGEXP: /^(?:https?:|mailto:)/i,
+    // DOMPurify checks every attribute that isn't URI-safe against the regex above;
+    // these two only ever hold numbers (title and alt are URI-safe already).
+    ADD_URI_SAFE_ATTR: ['colspan', 'rowspan'],
+    RETURN_DOM_FRAGMENT: true
+};
+AttachmentPreview.sanitizer_ready = function() {
+    var purify = window.APDOMPurify;
+    return typeof purify === 'function' && purify.isSupported === true;
+};
+AttachmentPreview.sanitize = function(html) {
+    if (!this.sanitizer_ready()) {
+        return document.createDocumentFragment();
     }
-    sanitizer.sanitize = function(html) {
-        html = strip_tags(html, safe);
-        var output = $($.parseHTML('<div>' + $.trim(html) + '</div>', null,
-            false));
-        output.find('*').each(function() {
-            trimAttributes(this);
+    var purify = window.APDOMPurify;
+    if (!this.purify_hooked) {
+        purify.addHook('afterSanitizeAttributes', function(node) {
+            if (node.nodeName === 'IMG') {
+                // Images only when embedded in the attachment itself. A remote src
+                // would tell the sender when (and from which IP) an agent read it.
+                var src = node.getAttribute('src') || '';
+                if (!/^data:image\/(?:png|gif|jpe?g|webp);base64,/i.test(src)) {
+                    node.removeAttribute('src');
+                }
+            }
+            if (node.nodeName === 'A' && node.hasAttribute('href')) {
+                node.setAttribute('target', '_blank');
+                node.setAttribute('rel', 'noopener noreferrer nofollow');
+            }
         });
-        return output.html();
+        this.purify_hooked = true;
     }
-
-    // http://locutus.io/php/strings/strip_tags/ filter the html to only those
-    // acceptable tags defined above as safe
-    function strip_tags(input, allowed) {
-        allowed = (((allowed || '') + '').toLowerCase().match(
-            /<[a-z][a-z0-9]*>/g) || []).join('')
-        var tags = /<\/?([a-z][a-z0-9]*)\b[^>]*>/gi
-        var commentsAndPhpTags = /<!--[\s\S]*?-->|<\?(?:php)?[\s\S]*?\?>/gi
-        return input
-            .replace(commentsAndPhpTags, '')
-            .replace(
-                tags,
-                function($0, $1) {
-                    return allowed
-                        .indexOf('<' + $1.toLowerCase() + '>') > -1 ? $0 :
-                        ''
-                })
-    }
-})(jQuery);
+    return purify.sanitize(String(html), this.purify_config);
+};
 
 /**
  * Setup handler to receive Attachments Preview Fetch events, and act on them.

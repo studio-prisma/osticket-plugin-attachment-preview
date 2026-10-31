@@ -73,7 +73,7 @@ class AttachmentPreviewPluginConfig extends PluginConfig {
         array(
           'label' => $__('Inline HTML files into a <div>'),
           'hint' => $__(
-            'Dangerous: While we filter/sanitize the HTML, make sure it is something you really need before turning on.'),
+            'Sanitized with DOMPurify: no scripts, styles, forms or remote images. Still only turn this on if you need it.'),
           'default' => FALSE
         )),
       'attach-audio' => new BooleanField(
