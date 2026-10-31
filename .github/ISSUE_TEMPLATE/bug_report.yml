@@ -1,0 +1,72 @@
+name: Bug report
+description: Something does not work as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do **not** attach real ticket attachments, ticket contents or customer data.
+        A minimal crafted file is enough. Security issues go through the Security tab, not here.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Enable "Inline PDF files"
+        2. Open a ticket with a PDF attachment as an agent
+        3. ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Attachment type
+      multiple: true
+      options:
+        - PDF
+        - Image
+        - Text / CSV / EML
+        - HTML
+        - Audio / video
+        - YouTube / Vimeo link
+        - ZIP export or other download
+        - Not attachment specific
+    validations:
+      required: true
+
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Plugin, osTicket, PHP, browser
+      placeholder: "2.0.0, osTicket 1.18.4, PHP 8.3.14, Firefox 140"
+    validations:
+      required: true
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Browser console and PHP error log
+      description: Console output on the ticket page (F12), and PHP error log lines containing "Attachment Preview".
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: The upstream plugin (attachments.phar) is not installed at the same time
+          required: true
+        - label: Exactly one plugin instance is enabled
+        - label: I have removed all customer data from this report
+          required: true
