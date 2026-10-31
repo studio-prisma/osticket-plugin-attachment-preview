@@ -1173,7 +1173,7 @@ class AttachmentPreviewPlugin extends Plugin
     private function updateStructure(
       \DOMElement $node,
       stdClass $structure,
-      \DOMNode $imported_element = null
+      ?\DOMNode $imported_element = null
     ): void {
         if ($structure->replace_found) {
             $node->parentNode->replaceChild($node, $imported_element);
