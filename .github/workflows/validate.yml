@@ -1,0 +1,157 @@
+name: Validate
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  schedule:
+    # Weekly, Monday 06:00 UTC — catches PHP release drift and new advisories.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: PHP Lint (${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.0", "8.1", "8.2", "8.3", "8.4"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, libxml
+          coverage: none
+
+      - name: Syntax check all production files
+        run: |
+          fail=0
+          while IFS= read -r -d '' f; do
+            php -l "$f" || fail=1
+          done < <(find . -name '*.php' -not -path './tests/*' -not -path './node_modules/*' -print0)
+          exit $fail
+
+  php-tests:
+    name: Unit + Fail-Mode + Integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: dom, libxml
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install and vendor DOMPurify
+        run: |
+          npm ci
+          ./tools/vendor.sh
+
+      - name: Unit tests
+        run: php tests/unit.php
+
+      - name: Fail-mode tests
+        run: php tests/failmode.php
+
+      - name: Integration tests (php -S)
+        run: php tests/integration.php
+
+  browser:
+    name: Browser (jsdom)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: dom, libxml
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install and vendor DOMPurify
+        run: |
+          npm ci
+          ./tools/vendor.sh
+
+      - name: jsdom tests
+        run: node tests/js/run.js
+
+  dependencies:
+    name: Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      # Only DOMPurify ships; an advisory against it fails the build.
+      - name: npm audit (shipped dependencies)
+        run: npm audit --omit=dev --audit-level=low
+
+      - name: Package builds
+        run: |
+          npm ci
+          ./tools/build-zip.sh
+
+  actionlint:
+    name: Workflow lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: actionlint
+        uses: raven-actions/actionlint@v2
+
+  # Single aggregating context for the branch ruleset. Required-status-check names
+  # are job names, and the lint matrix produces one name per PHP version — those
+  # would have to be re-registered on every version bump. This job is the only
+  # context the ruleset knows about; the matrix can change freely underneath it.
+  gate:
+    name: Gate
+    runs-on: ubuntu-latest
+    needs: [lint, php-tests, browser, dependencies, actionlint]
+    if: always()
+    steps:
+      - name: Fail unless every job succeeded
+        if: >-
+          contains(needs.*.result, 'failure') ||
+          contains(needs.*.result, 'cancelled') ||
+          contains(needs.*.result, 'skipped')
+        run: |
+          echo "lint=${{ needs.lint.result }}"
+          echo "php-tests=${{ needs.php-tests.result }}"
+          echo "browser=${{ needs.browser.result }}"
+          echo "dependencies=${{ needs.dependencies.result }}"
+          echo "actionlint=${{ needs.actionlint.result }}"
+          exit 1
