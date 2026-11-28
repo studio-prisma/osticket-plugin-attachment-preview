@@ -9,6 +9,11 @@ Versions before 2.0.0 are the upstream plugin [clonemeagain/attachment_preview](
 
 ## [Unreleased]
 
+### Changed
+
+- CI: all GitHub actions pinned to commit SHAs instead of tags; actionlint runs from the shared
+  action in `github-config-security-workflow` with checksum check (security workflow v1.2.1).
+
 ## [2.0.0] - 2026-10-31
 
 First release of the studio-prisma fork, based on upstream v1.18 (`50bbb30`).
