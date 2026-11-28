@@ -12,7 +12,7 @@ Versions before 2.0.0 are the upstream plugin [clonemeagain/attachment_preview](
 ### Changed
 
 - CI: all GitHub actions pinned to commit SHAs instead of tags; actionlint runs from the shared
-  action in `github-config-security-workflow` with checksum check (security workflow v1.2.0).
+  action in `github-config-security-workflow` with checksum check (security workflow v1.2.1).
 
 ## [2.0.0] - 2026-10-31
 
